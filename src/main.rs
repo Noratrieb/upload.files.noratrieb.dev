@@ -1,14 +1,14 @@
 use axum::{
-    Router,
     body::Bytes,
     extract::{DefaultBodyLimit, FromRequestParts, Multipart, State},
-    http::{StatusCode, header},
+    http::{header, StatusCode},
     response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post},
+    Router,
 };
 use base64::Engine;
-use color_eyre::eyre::{self, Context, bail};
-use color_eyre::{Result, eyre::OptionExt};
+use color_eyre::eyre::{self, bail, Context};
+use color_eyre::{eyre::OptionExt, Result};
 use object_store::ObjectStore;
 use rand_core::TryRngCore;
 use tracing::{error, info, level_filters::LevelFilter};
@@ -49,7 +49,7 @@ async fn main() -> Result<()> {
         .wrap_err("failed to build client")?;
 
     let app = Router::new()
-        .route("/", get(|| async { Html(include_str!("../index.html")) }))
+        .route("/", get(index))
         .route("/", post(upload))
         .with_state(Config {
             username,
@@ -66,6 +66,11 @@ async fn main() -> Result<()> {
     info!(?addr, "Starting server");
 
     axum::serve(listener, app).await.wrap_err("failed to serve")
+}
+
+// todo: use middleware
+async fn index(_: Auth) -> impl IntoResponse {
+    Html(include_str!("../index.html"))
 }
 
 async fn upload(
@@ -184,6 +189,10 @@ async fn parse_req(mut multipart: Multipart) -> Result<UploadRequest> {
         let random = bs58::encode(&random).into_string();
 
         name = format!("{random}/{name}");
+    }
+
+    if name.is_empty() {
+        bail!("name must not be empty");
     }
 
     name = format!("/{name}");
