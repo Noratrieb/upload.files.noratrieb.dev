@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>nora's files</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        width: 100%;
+        height: 100%;
+      }
+
+      body {
+        height: 100%;
+      }
+
+      html {
+        font-family: sans-serif;
+        background-color: rgb(62, 60, 60);
+        color: white;
+      }
+
+      @media (prefers-color-scheme: light) {
+        html {
+          background-color: rgb(223, 223, 223);
+          color: black;
+        }
+      }
+
+      .wrapper {
+        height: 100%;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        flex-direction: column;
+      }
+
+      p {
+        margin-top: 0;
+        margin-bottom: 5px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrapper">
+      <h1>nora's files uploader</h1>
+      <form method="post" enctype="multipart/form-data">
+        <div>
+          <label for="filename">filename (empty for default)</label>
+          <input type="text" id="filename" name="filename" />
+        </div>
+        <div>
+          <label for="file">file</label>
+          <input type="file" id="file" name="file" />
+        </div>
+        <div>
+          <label for="secret">secret upload (embed random data in path)</label>
+          <input type="checkbox" id="secret" name="secret" />
+        </div>
+        <div>
+          <button type="submit">upload</button>
+        </div>
+      </form>
+    </div>
+  </body>
+</html>

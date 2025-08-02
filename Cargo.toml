@@ -1,0 +1,26 @@
+[package]
+name = "upload-files-noratrieb-dev"
+version = "0.1.0"
+edition = "2024"
+
+[profile.release]
+opt-level = "s"
+lto = "thin"
+
+[dependencies]
+axum = { version = "0.8.4", default-features = false, features = [
+    "http1",
+    "multipart",
+    "tokio",
+    "tower-log",
+    "tracing",
+] }
+base64 = "0.22.1"
+bs58 = "0.5.1"
+color-eyre = "0.6.5"
+object_store = { version = "0.12.3", default-features = false, features = ["aws"] }
+rand_core = { version = "0.9.3", features = ["os_rng"] }
+subtle = { version = "2.6.1", default-features = false }
+tokio = { version = "1.47.1", features = ["macros", "rt", "net"] }
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
