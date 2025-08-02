@@ -180,16 +180,16 @@ async fn parse_req(mut multipart: Multipart) -> Result<UploadRequest> {
         bail!("name must not contain slashes: '{name}'")
     }
 
+    if name.is_empty() {
+        bail!("name must not be empty");
+    }
+
     if secret {
         let mut random = [0_u8; 32];
         rand_core::OsRng.try_fill_bytes(&mut random).unwrap();
         let random = bs58::encode(&random).into_string();
 
         name = format!("{random}/{name}");
-    }
-
-    if name.is_empty() {
-        bail!("name must not be empty");
     }
 
     name = format!("/{name}");
