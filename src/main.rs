@@ -220,12 +220,12 @@ fn reject_auth(reason: &str) -> Response {
         .into_response()
 }
 
-impl<S: Sync> FromRequestParts<S> for Auth {
+impl FromRequestParts<Config> for Auth {
     type Rejection = Response;
 
     async fn from_request_parts(
         parts: &mut axum::http::request::Parts,
-        _: &S,
+        config: &Config,
     ) -> Result<Self, Self::Rejection> {
         let Some(header) = parts.headers.get(header::AUTHORIZATION) else {
             return Err(reject_auth("missing authorization header"));
@@ -251,6 +251,13 @@ impl<S: Sync> FromRequestParts<S> for Auth {
         let Some((username, password)) = decoded.split_once(':') else {
             return Err(reject_auth("missing : between username and password"));
         };
+
+        if username != config.username {
+            return Err(reject_auth("invalid username"));
+        }
+        if subtle::ConstantTimeEq::ct_ne(password.as_bytes(), config.password.as_bytes()).into() {
+            return Err(reject_auth("invalid password"));
+        }
 
         Ok(Auth {
             username: username.to_owned(),
