@@ -1,7 +1,8 @@
 use axum::{
     body::Bytes,
-    extract::{DefaultBodyLimit, FromRequestParts, Multipart, State},
+    extract::{DefaultBodyLimit, Multipart, Request, State},
     http::{header, StatusCode},
+    middleware::Next,
     response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post},
     Router,
@@ -11,6 +12,7 @@ use color_eyre::eyre::{self, bail, Context};
 use color_eyre::{eyre::OptionExt, Result};
 use object_store::ObjectStore;
 use rand_core::TryRngCore;
+use tower::ServiceBuilder;
 use tracing::{error, info, level_filters::LevelFilter};
 use tracing_subscriber::EnvFilter;
 
@@ -48,16 +50,23 @@ async fn main() -> Result<()> {
         .build()
         .wrap_err("failed to build client")?;
 
+    let state = Config {
+        username,
+        password,
+        s3_client,
+    };
+
     let app = Router::new()
         .route("/", get(index))
         .route("/", post(upload))
-        .with_state(Config {
-            username,
-            password,
-            s3_client,
-        })
-        // raise limit to 100MB
-        .layer(DefaultBodyLimit::max(100_000_000));
+        .with_state(state.clone())
+        .layer(
+            ServiceBuilder::new()
+                .layer(tower_http::trace::TraceLayer::new_for_http())
+                // raise limit to 100MB
+                .layer(DefaultBodyLimit::max(100_000_000))
+                .layer(axum::middleware::from_fn_with_state(state, auth_middleware)),
+        );
 
     let addr = "0.0.0.0:3050";
     let listener = tokio::net::TcpListener::bind(addr)
@@ -68,23 +77,11 @@ async fn main() -> Result<()> {
     axum::serve(listener, app).await.wrap_err("failed to serve")
 }
 
-// todo: use middleware
-async fn index(_: Auth) -> impl IntoResponse {
+async fn index() -> impl IntoResponse {
     Html(include_str!("../index.html"))
 }
 
-async fn upload(
-    auth: Auth,
-    State(config): State<Config>,
-    multipart: Multipart,
-) -> Result<Response, Response> {
-    if auth.username != config.username {
-        return Err(reject_auth("invalid username"));
-    }
-    if subtle::ConstantTimeEq::ct_ne(auth.password.as_bytes(), config.password.as_bytes()).into() {
-        return Err(reject_auth("invalid password"));
-    }
-
+async fn upload(State(config): State<Config>, multipart: Multipart) -> Result<Response, Response> {
     let req = parse_req(multipart).await.map_err(|err| {
         info!(?err, "Bad request for upload");
         (StatusCode::BAD_REQUEST, err.to_string()).into_response()
@@ -203,9 +200,48 @@ async fn parse_req(mut multipart: Multipart) -> Result<UploadRequest> {
     })
 }
 
-struct Auth {
-    username: String,
-    password: String,
+#[axum::debug_middleware]
+async fn auth_middleware(State(config): State<Config>, request: Request, next: Next) -> Response {
+    match check_auth(config, request).await {
+        Ok(request) => next.run(request).await,
+        Err(err) => err,
+    }
+}
+
+async fn check_auth(config: Config, request: Request) -> Result<Request, Response> {
+    let Some(header) = request.headers().get(header::AUTHORIZATION) else {
+        return Err(reject_auth("missing authorization header"));
+    };
+
+    let header = header
+        .to_str()
+        .map_err(|_| reject_auth("authorization header is invalid UTF-8"))?;
+
+    let Some(("Basic", value)) = header.split_once(' ') else {
+        return Err(reject_auth(
+            "invalid authorization header, missing 'Basic '",
+        ));
+    };
+
+    let decoded = String::from_utf8(
+        base64::prelude::BASE64_STANDARD
+            .decode(value)
+            .map_err(|_| reject_auth("invalid base64 value"))?,
+    )
+    .map_err(|_| reject_auth("invalid UTF-8 after base64 decode"))?;
+
+    let Some((username, password)) = decoded.split_once(':') else {
+        return Err(reject_auth("missing : between username and password"));
+    };
+
+    if username != config.username {
+        return Err(reject_auth("invalid username"));
+    }
+    if subtle::ConstantTimeEq::ct_ne(password.as_bytes(), config.password.as_bytes()).into() {
+        return Err(reject_auth("invalid password"));
+    }
+
+    Ok(request)
 }
 
 fn reject_auth(reason: &str) -> Response {
@@ -218,50 +254,4 @@ fn reject_auth(reason: &str) -> Response {
         )],
     )
         .into_response()
-}
-
-impl FromRequestParts<Config> for Auth {
-    type Rejection = Response;
-
-    async fn from_request_parts(
-        parts: &mut axum::http::request::Parts,
-        config: &Config,
-    ) -> Result<Self, Self::Rejection> {
-        let Some(header) = parts.headers.get(header::AUTHORIZATION) else {
-            return Err(reject_auth("missing authorization header"));
-        };
-
-        let header = header
-            .to_str()
-            .map_err(|_| reject_auth("authorization header is invalid UTF-8"))?;
-
-        let Some(("Basic", value)) = header.split_once(' ') else {
-            return Err(reject_auth(
-                "invalid authorization header, missing 'Basic '",
-            ));
-        };
-
-        let decoded = String::from_utf8(
-            base64::prelude::BASE64_STANDARD
-                .decode(value)
-                .map_err(|_| reject_auth("invalid base64 value"))?,
-        )
-        .map_err(|_| reject_auth("invalid UTF-8 after base64 decode"))?;
-
-        let Some((username, password)) = decoded.split_once(':') else {
-            return Err(reject_auth("missing : between username and password"));
-        };
-
-        if username != config.username {
-            return Err(reject_auth("invalid username"));
-        }
-        if subtle::ConstantTimeEq::ct_ne(password.as_bytes(), config.password.as_bytes()).into() {
-            return Err(reject_auth("invalid password"));
-        }
-
-        Ok(Auth {
-            username: username.to_owned(),
-            password: password.to_owned(),
-        })
-    }
 }
