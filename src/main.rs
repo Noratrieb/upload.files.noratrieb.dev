@@ -92,7 +92,7 @@ async fn upload(State(config): State<Config>, multipart: Multipart) -> Result<Re
     config
         .s3_client
         .put_opts(
-            &req.name.as_str().into(),
+            &req.name,
             object_store::PutPayload::from_bytes(req.bytes),
             object_store::PutOptions {
                 mode: object_store::PutMode::Create,
@@ -127,7 +127,7 @@ async fn upload(State(config): State<Config>, multipart: Multipart) -> Result<Re
 }
 
 struct UploadRequest {
-    name: String,
+    name: object_store::path::Path,
     bytes: Bytes,
 }
 
@@ -194,8 +194,11 @@ async fn parse_req(mut multipart: Multipart) -> Result<UploadRequest> {
 
     name = format!("/{name}");
 
+    let path =
+        object_store::path::Path::parse(&name).wrap_err_with(|| format!("invalid path: {name}"))?;
+
     Ok(UploadRequest {
-        name,
+        name: path,
         bytes: file.ok_or_eyre("missing file")?,
     })
 }
