@@ -123,7 +123,7 @@ async fn upload(State(config): State<Config>, multipart: Multipart) -> Result<Re
 
     info!(path = ?req.name, "Successfully uploaded file");
 
-    Ok(Redirect::to(&format!("https://files.noratrieb.dev{}", req.name)).into_response())
+    Ok(Redirect::to(&format!("https://files.noratrieb.dev/{}", req.name)).into_response())
 }
 
 struct UploadRequest {
